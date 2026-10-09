@@ -10,8 +10,17 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
-    h1 { margin-bottom: 15px; font-size: 22px; color: #ff4757; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-    #game-container { position: relative; width: 640px; height: 480px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); background: #000; }
+    h1 { margin-bottom: 12px; font-size: 22px; color: #ff4757; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    
+    /* หน้าจอล็อกกรอกรหัส */
+    #lock-screen { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .lock-box { background: #222; padding: 30px; border-radius: 16px; border: 2px solid #ff4757; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .lock-box h2 { color: #ff4757; margin-bottom: 15px; }
+    .lock-box input { padding: 12px; font-size: 20px; width: 180px; text-align: center; border-radius: 8px; border: 1px solid #444; background: #333; color: #fff; letter-spacing: 3px; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto; }
+    .lock-box button { padding: 12px 28px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; background: #2ed573; color: #000; cursor: pointer; transition: 0.2s; }
+    .lock-box button:hover { background: #26af5f; }
+
+    #game-container { position: relative; width: 640px; height: 480px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); background: #000; display: none; }
     video, canvas { position: absolute; top: 0; left: 0; width: 640px; height: 480px; transform: scaleX(-1); }
     #ui-overlay { position: absolute; top: 15px; left: 15px; right: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none; }
     .score-board { background: rgba(0, 0, 0, 0.6); padding: 8px 16px; border-radius: 20px; font-size: 20px; font-weight: bold; border: 2px solid #2ed573; color: #2ed573; }
@@ -19,31 +28,64 @@
   </style>
 </head>
 <body>
+
+  <!-- หน้าจอล็อกให้ใส่รหัสก่อนเล่น -->
+  <div id="lock-screen">
+    <div class="lock-box">
+      <h2>🔒 ต้องกรอกรหัสจากคนดูก่อนเล่น</h2>
+      <p style="margin-bottom: 12px; color: #ccc;">กรุณาขอรหัส 4 หลักจากหน้าดูกล้อง</p>
+      <input type="number" id="code-input" placeholder="ใส่รหัส 4 หลัก" maxlength="4">
+      <button onclick="startGame()">ยืนยันเพื่อเริ่มเล่นเกม</button>
+    </div>
+  </div>
+
   <h1>🍎 เกมเก็บแอปเปิ้ลด้วยศีรษะ 🍎</h1>
+
   <div id="game-container">
     <div id="loading">กำลังเปิดกล้องและระบบจับใบหน้า...</div>
     <div id="ui-overlay"><div class="score-board">คะแนน: <span id="score">0</span></div></div>
     <video id="webcam" playsinline style="display:none;"></video>
     <canvas id="gameCanvas" width="640" height="480"></canvas>
   </div>
+
   <script>
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('gameCanvas');
     const canvasCtx = canvasElement.getContext('2d');
     const scoreElement = document.getElementById('score');
     const loadingElement = document.getElementById('loading');
+    const lockScreen = document.getElementById('lock-screen');
+    const gameContainer = document.getElementById('game-container');
 
     let score = 0;
-    const STREAM_ID = 'natthakit-apple-game-stream-2026';
-    const peer = new Peer(STREAM_ID, {
-      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
-    });
+    let peer = null;
 
-    peer.on('call', (call) => {
-      // ดึงภาพสดจาก Canvas หน้าเกมส่งไปให้อีกเครื่อง
-      const canvasStream = canvasElement.captureStream(30);
-      call.answer(canvasStream);
-    });
+    function startGame() {
+      const inputCode = document.getElementById('code-input').value.trim();
+      if (!inputCode || inputCode.length !== 4) {
+        alert('กรุณากรอกรหัสห้องให้ถูกต้อง (ตัวเลข 4 หลัก)');
+        return;
+      }
+
+      // ซ่อนหน้าจอล็อก แล้วแสดงหน้าเกม
+      lockScreen.style.display = 'none';
+      gameContainer.style.display = 'block';
+
+      // เริ่มการเชื่อมต่อ PeerJS
+      peer = new Peer({
+        config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
+      });
+
+      peer.on('open', () => {
+        // ยิงสายวิดีโอไปหาเครื่องคนดูตามรหัสที่กรอก
+        const targetHostId = 'apple-game-host-' + inputCode;
+        const canvasStream = canvasElement.captureStream(30);
+        peer.call(targetHostId, canvasStream);
+      });
+
+      // เริ่มต้นเปิดกล้องและระบบเกม
+      initGame();
+    }
 
     let basket = { x: 320, y: 100, width: 100, height: 60 };
     let apples = [];
@@ -131,15 +173,17 @@
       canvasCtx.restore();
     }
 
-    const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-    faceMesh.onResults(onResults);
+    function initGame() {
+      const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+      faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+      faceMesh.onResults(onResults);
 
-    const camera = new Camera(videoElement, {
-      onFrame: async () => { await faceMesh.send({ image: videoElement }); },
-      width: 640, height: 480
-    });
-    camera.start();
+      const camera = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({ image: videoElement }); },
+        width: 640, height: 480
+      });
+      camera.start();
+    }
   </script>
 </body>
 </html>

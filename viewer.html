@@ -6,45 +6,58 @@
   <title>หน้าจอติดตามกล้องผู้เล่น</title>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; background: #111; color: #fff; padding: 20px; }
-    h1 { margin-bottom: 15px; color: #2ed573; }
-    button { padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 6px; border: none; background: #ff4757; color: white; cursor: pointer; }
-    button:hover { background: #ff6b81; }
-    #video-container { margin-top: 20px; display: flex; justify-content: center; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #111; color: #fff; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+    h1 { color: #2ed573; margin-bottom: 10px; }
+    .room-card { background: #222; padding: 15px 25px; border-radius: 12px; border: 2px solid #2ed573; margin-bottom: 15px; }
+    .room-code { font-size: 32px; font-weight: bold; color: #ffa500; letter-spacing: 4px; margin-top: 5px; }
+    #video-container { margin-top: 10px; display: flex; justify-content: center; }
     video { width: 640px; height: 480px; background: #000; border-radius: 12px; border: 2px solid #333; transform: scaleX(-1); }
-    #status { margin-top: 10px; font-size: 14px; color: #aaa; }
+    #status { margin-top: 10px; font-size: 15px; color: #aaa; }
   </style>
 </head>
 <body>
+
   <h1>📺 หน้าจอติดตามกล้องผู้เล่น</h1>
-  <button onclick="watchCamera()">เปิดดูกล้องสด</button>
-  <div id="status">สถานะ: ยังไม่ได้เชื่อมต่อ</div>
+  
+  <div class="room-card">
+    <div>ส่งรหัสนี้ให้ผู้เล่นเพื่อเริ่มเกม:</div>
+    <div class="room-code" id="my-room-code">กำลังสร้างรหัส...</div>
+  </div>
+
+  <div id="status">สถานะ: กำลังรอผู้เล่นกรอกรหัสและเข้าสู่เกม...</div>
+
   <div id="video-container">
     <video id="playerVideo" autoplay playsinline muted></video>
   </div>
+
   <script>
-    const TARGET_STREAM_ID = 'natthakit-apple-game-stream-2026';
-    const peer = new Peer({
+    // สุ่มรหัสห้อง 4 หลักสำหรับคนดู
+    const randomCode = Math.floor(1000 + Math.random() * 9000).toString();
+    document.getElementById('my-room-code').innerText = randomCode;
+
+    const MY_STREAM_ID = 'apple-game-host-' + randomCode;
+    const peer = new Peer(MY_STREAM_ID, {
       config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
     });
+
     const playerVideo = document.getElementById('playerVideo');
     const statusText = document.getElementById('status');
 
-    function watchCamera() {
-      statusText.innerText = 'กำลังเชื่อมต่อ...';
-      const call = peer.call(TARGET_STREAM_ID, new MediaStream());
-
+    // รอรับสายสตรีมภาพจากผู้เล่นเมื่อผู้เล่นใส่รหัสถูกต้อง
+    peer.on('call', (call) => {
+      statusText.innerText = '🟢 เชื่อมต่อสำเร็จ! กำลังรับชมสัญญาณสดจากผู้เล่น...';
+      call.answer(); // ตอบรับการเชื่อมต่อ
       call.on('stream', (remoteStream) => {
-        statusText.innerText = '🟢 เชื่อมต่อสำเร็จ! กำลังแสดงภาพหน้าจอเกมสด';
         playerVideo.srcObject = remoteStream;
         playerVideo.play();
       });
+    });
 
-      call.on('error', (err) => {
-        statusText.innerText = '🔴 เชื่อมต่อไม่สำเร็จ (เปิดเครื่องผู้เล่นค้างไว้ก่อนนะ)';
-        console.error(err);
-      });
-    }
+    peer.on('error', (err) => {
+      console.error(err);
+      statusText.innerText = '🔴 เกิดข้อผิดพลาดในการเชื่อมต่อ';
+    });
   </script>
 </body>
 </html>

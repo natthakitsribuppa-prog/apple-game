@@ -21,18 +21,18 @@
   <h1>📺 หน้าจอติดตามกล้องผู้เล่น</h1>
   
   <div class="room-card">
-    <div>ส่งรหัสนี้ให้ผู้เล่นเพื่อเริ่มเกม:</div>
+    <div>นำรหัสนี้ไปให้ผู้เล่นกรอกเพื่อเปิดเกม:</div>
     <div class="room-code" id="my-room-code">กำลังสร้างรหัส...</div>
   </div>
 
-  <div id="status">สถานะ: กำลังรอผู้เล่นกรอกรหัสและเข้าสู่เกม...</div>
+  <div id="status">สถานะ: กำลังรอผู้เล่นกรอกรหัสและสแกนกล้อง...</div>
 
   <div id="video-container">
     <video id="playerVideo" autoplay playsinline muted></video>
   </div>
 
   <script>
-    // สุ่มรหัสห้อง 4 หลักสำหรับคนดู
+    // สุ่มรหัสห้อง 4 หลัก
     const randomCode = Math.floor(1000 + Math.random() * 9000).toString();
     document.getElementById('my-room-code').innerText = randomCode;
 
@@ -44,10 +44,15 @@
     const playerVideo = document.getElementById('playerVideo');
     const statusText = document.getElementById('status');
 
-    // รอรับสายสตรีมภาพจากผู้เล่นเมื่อผู้เล่นใส่รหัสถูกต้อง
+    // ตอบรับการทักทายตรวจสอบสถานะ
+    peer.on('connection', (conn) => {
+      statusText.innerText = '🟡 ผู้เล่นกำลังตรวจสอบรหัสห้องและสแกนกล้อง...';
+    });
+
+    // รับสายวิดีโอจากผู้เล่น
     peer.on('call', (call) => {
-      statusText.innerText = '🟢 เชื่อมต่อสำเร็จ! กำลังรับชมสัญญาณสดจากผู้เล่น...';
-      call.answer(); // ตอบรับการเชื่อมต่อ
+      statusText.innerText = '🟢 ตรวจสอบสำเร็จ! กำลังรับชมภาพสดจากผู้เล่น...';
+      call.answer();
       call.on('stream', (remoteStream) => {
         playerVideo.srcObject = remoteStream;
         playerVideo.play();
@@ -56,7 +61,7 @@
 
     peer.on('error', (err) => {
       console.error(err);
-      statusText.innerText = '🔴 เกิดข้อผิดพลาดในการเชื่อมต่อ';
+      statusText.innerText = '🔴 เกิดข้อผิดพลาดในระบบส่งสัญญาณ';
     });
   </script>
 </body>

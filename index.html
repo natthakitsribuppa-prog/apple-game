@@ -12,13 +12,15 @@
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
     h1 { margin-bottom: 12px; font-size: 22px; color: #ff4757; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
     
-    /* หน้าจอล็อกกรอกรหัส */
+    /* หน้าจอล็อก */
     #lock-screen { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: #111; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-    .lock-box { background: #222; padding: 30px; border-radius: 16px; border: 2px solid #ff4757; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    .lock-box h2 { color: #ff4757; margin-bottom: 15px; }
-    .lock-box input { padding: 12px; font-size: 20px; width: 180px; text-align: center; border-radius: 8px; border: 1px solid #444; background: #333; color: #fff; letter-spacing: 3px; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto; }
-    .lock-box button { padding: 12px 28px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; background: #2ed573; color: #000; cursor: pointer; transition: 0.2s; }
+    .lock-box { background: #222; padding: 30px; border-radius: 16px; border: 2px solid #ff4757; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 90%; width: 360px; }
+    .lock-box h2 { color: #ff4757; margin-bottom: 15px; font-size: 20px; }
+    .lock-box input { padding: 12px; font-size: 20px; width: 100%; text-align: center; border-radius: 8px; border: 1px solid #444; background: #333; color: #fff; letter-spacing: 3px; margin-bottom: 15px; display: block; }
+    .lock-box button { padding: 12px 28px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; background: #2ed573; color: #000; cursor: pointer; transition: 0.2s; width: 100%; }
     .lock-box button:hover { background: #26af5f; }
+    .lock-box button:disabled { background: #555; color: #aaa; cursor: not-allowed; }
+    #error-msg { color: #ff4757; margin-top: 12px; font-size: 14px; display: none; font-weight: bold; }
 
     #game-container { position: relative; width: 640px; height: 480px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); background: #000; display: none; }
     video, canvas { position: absolute; top: 0; left: 0; width: 640px; height: 480px; transform: scaleX(-1); }
@@ -29,13 +31,14 @@
 </head>
 <body>
 
-  <!-- หน้าจอล็อกให้ใส่รหัสก่อนเล่น -->
+  <!-- หน้าจอล็อก -->
   <div id="lock-screen">
     <div class="lock-box">
-      <h2>🔒 ต้องกรอกรหัสจากคนดูก่อนเล่น</h2>
-      <p style="margin-bottom: 12px; color: #ccc;">กรุณาขอรหัส 4 หลักจากหน้าดูกล้อง</p>
+      <h2>🔒 ตรวจสอบการเชื่อมต่อ</h2>
+      <p style="margin-bottom: 12px; color: #ccc; font-size: 14px;">กรุณากรอกรหัส 4 หลักจากหน้าดูภาพ</p>
       <input type="number" id="code-input" placeholder="ใส่รหัส 4 หลัก" maxlength="4">
-      <button onclick="startGame()">ยืนยันเพื่อเริ่มเล่นเกม</button>
+      <button id="start-btn" onclick="validateAndStart()">ตรวจสอบและเริ่มเล่นเกม</button>
+      <div id="error-msg"></div>
     </div>
   </div>
 
@@ -56,35 +59,80 @@
     const loadingElement = document.getElementById('loading');
     const lockScreen = document.getElementById('lock-screen');
     const gameContainer = document.getElementById('game-container');
+    const startBtn = document.getElementById('start-btn');
+    const errorMsg = document.getElementById('error-msg');
 
     let score = 0;
     let peer = null;
 
-    function startGame() {
+    function showError(msg) {
+      errorMsg.innerText = msg;
+      errorMsg.style.display = 'block';
+      startBtn.innerText = 'ตรวจสอบและเริ่มเล่นเกม';
+      startBtn.disabled = false;
+    }
+
+    async function validateAndStart() {
       const inputCode = document.getElementById('code-input').value.trim();
+      errorMsg.style.display = 'none';
+
       if (!inputCode || inputCode.length !== 4) {
-        alert('กรุณากรอกรหัสห้องให้ถูกต้อง (ตัวเลข 4 หลัก)');
+        showError('❌ กรุณากรอกรหัสห้องให้ถูกต้อง (ตัวเลข 4 หลัก)');
         return;
       }
 
-      // ซ่อนหน้าจอล็อก แล้วแสดงหน้าเกม
-      lockScreen.style.display = 'none';
-      gameContainer.style.display = 'block';
+      startBtn.innerText = '1/2 กำลังตรวจสอบกล้อง...';
+      startBtn.disabled = true;
 
-      // เริ่มการเชื่อมต่อ PeerJS
+      // 1. ตรวจสอบการเข้าถึงกล้องก่อน
+      let localStream = null;
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch (err) {
+        showError('❌ ไม่พบกล้อง หรือคุณไม่ได้อนุญาตให้ใช้งานกล้อง!');
+        return;
+      }
+
+      startBtn.innerText = '2/2 กำลังค้นหารหัสห้องคนดู...';
+
+      // 2. ตรวจสอบรหัสห้องกับ PeerJS ฝั่งคนดู
       peer = new Peer({
         config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
       });
 
       peer.on('open', () => {
-        // ยิงสายวิดีโอไปหาเครื่องคนดูตามรหัสที่กรอก
         const targetHostId = 'apple-game-host-' + inputCode;
         const canvasStream = canvasElement.captureStream(30);
-        peer.call(targetHostId, canvasStream);
+        
+        const conn = peer.connect(targetHostId);
+        let isConnected = false;
+
+        conn.on('open', () => {
+          isConnected = true;
+          // ส่งสายวิดีโอไปหาคนดู
+          peer.call(targetHostId, canvasStream);
+
+          // ผ่านการตรวจสอบทั้งสองขั้นตอน -> ปลดล็อกเข้าสู่เกม
+          lockScreen.style.display = 'none';
+          gameContainer.style.display = 'block';
+          initGame(localStream);
+        });
+
+        // หากเชื่อมต่อคนดูไม่สำเร็จภายใน 4 วินาที
+        setTimeout(() => {
+          if (!isConnected) {
+            peer.destroy();
+            // ปิดกล้องทดสอบ
+            localStream.getTracks().forEach(track => track.stop());
+            showError('❌ ไม่พบรหัสห้องนี้! กรุณากรอกรหัสให้ถูก');
+          }
+        }, 4000);
       });
 
-      // เริ่มต้นเปิดกล้องและระบบเกม
-      initGame();
+      peer.on('error', (err) => {
+        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        showError('❌ ไม่สามารถเชื่อมต่อระบบส่งสัญญาณได้');
+      });
     }
 
     let basket = { x: 320, y: 100, width: 100, height: 60 };
@@ -173,7 +221,10 @@
       canvasCtx.restore();
     }
 
-    function initGame() {
+    function initGame(stream) {
+      videoElement.srcObject = stream;
+      videoElement.play();
+
       const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
       faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
       faceMesh.onResults(onResults);
@@ -183,7 +234,4 @@
         width: 640, height: 480
       });
       camera.start();
-    }
-  </script>
-</body>
-</html>
+    กรุณาเปิดหน้าคนดูรอไว้ล่วงหน้า'

